@@ -2,7 +2,8 @@
 Microsoft Reporting Services (SSRS) RPC trough SOAP
 
 ## Installation
-You just need to run ```pip install PySSRS```
+1. Make sure you have Python 3+ installed
+2. Run ```pip install PySSRS```
 
 ### Connecting to SSRS
 You can use it as a facilitator to make SOAP RPCs.
@@ -11,8 +12,13 @@ For example:
 
 From SSRS import SSRS
 
-RS = SSRS('localhost', 'user@domain.com', '@paswd2017')
-result = RS.client.service.ListChildren(dir, recursive)
+Service   = 'http://localhost/ReportinServices/ReportService2010.asmx?wsdl'
+Execution = 'http://myserver/reportserver/ReportExecution2005.asmx?wsdl'
+user      = 'user@contoso.com'
+password  = '@password2017'
+
+RS = SSRS(Service, Execution, user, password)
+result = RS.ServiceClient.service.ListChildren(dir, recursive)
 
 for item in result.CatalogItem:
   print(item['Name'])
@@ -29,19 +35,26 @@ ListMethods() | List all SOAP procedures | List []
 DirItems() | List all objects in a directory | Dictionary {}
 Find() | Find for a item by it's name | Dictionary {}
 GetParameters() | Return all parameters from a Report object | Dictionary {}
+RequestReport() | Execute a report from SSRS | Report Object - Used to suply RenderReport()
+RenderReport() | Render a Requested Report | Dictionary {}
 
-### Snippet
+### Rendering Reports
+Now we can load and render report with this module. Please, check **samples/LoadReport.py** to see how it works!
+
+
+### Example of Service Function
 
 Check this small code, it's an sample of usage
 
 ```python
 # Conneting to SSRS SOAP server
 
-wsdl = 'http://localhost/ReportinServices/ReportService2010.asmx?wsdl'
+ServiceWSDL    = 'http://localhost/ReportinServices/ReportService2010.asmx?wsdl'
+ExecutionWSDL  = 'http://myserver/reportserver/ReportExecution2005.asmx?wsdl'
 user = 'user@domain.com
 psw  = '@password2017'
 
-RS = SSRS(wsdl, user, psw)
+RS = SSRS(ServiceWSDL, ExecutionWSDL, user, psw)
 
 '''
 Return a LIST with all available SOAP procedures
@@ -50,7 +63,7 @@ so you can iterate over them...
 Methods = RS.ListMethods()
 
 '''
-Return a DICTIONARY with all items in a specific folder
+Return a DICTIONARY with all items in a specific folder##
 you can also use the <recursive> parameter to scan subfolders.
 If you don't specify the <dir> parameter it'll take the root ('/') as default
 '''
