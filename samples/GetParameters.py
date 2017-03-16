@@ -5,7 +5,7 @@ import connection_data as d
 import context
 from SSRS import SSRS
 
-RS      = SSRS(d._host, d._user, d._psw)
+RS      = SSRS(d._service, d._execution, d._user, d._psw)
 result  = RS.GetParameters('/Qualidade/Indice de Conformidade')
 
 print(
