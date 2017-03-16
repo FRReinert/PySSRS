@@ -11,6 +11,7 @@ import codecs
 import uuid
 import sys
 import os
+from _ast import Load
 
 class SSRS():
     '''
@@ -114,10 +115,7 @@ class SSRS():
         
         try: 
             it = self.ListDirItems(recursive=True)
-            if isinstance(it, Text):
-                return dict(it)
-                
-        
+
         except BaseException as e:
             msg = "Find() Could not retrieve the Objects: %s" % e.fault.faultstring
             log.error(msg)
@@ -125,7 +123,7 @@ class SSRS():
             if self.verbose:     
                 print(msg)  
                 
-            return False
+            return
         
         catalog_dict = {}
         for key, value in it.items() :
@@ -148,18 +146,14 @@ class SSRS():
         
         try:
             it = self.ServiceClient.service.GetItemParameters(path, None, True, None, None)
-            if isinstance(it, Text):
-                return dict(it)
-            
+
         except BaseException as e:
             msg = "GetParameters() Could not retrieve the parameters: %s" % e.fault.faultstring
             log.error(msg)
-            
-            if self.verbose:     
-                print(msg)  
-                
-            return False        
-       
+            if self.verbose:
+                print(msg)
+                return
+              
         param_dict = {}
         for item in it.ItemParameter:
             param_dict[item['Name']] = {
@@ -176,24 +170,33 @@ class SSRS():
         
         return param_dict
     
-    def RequestReport(self, path, format, **parameters):
-        '''
-            Retrieve the report from SSRS
-                Render and create output file
-        '''
-        
-        # Available formats of render
-        available_formats = {'XML':'xml','NULL':'txt','CSV':'csv','IMAGE':'jpg','PDF':'pdf','HTML4.0':'html','HTML3.2':'html','MHTML':'mht','EXCEL':'xlsx','Word':'docx'}
-        
-        # ExecInfo generates the Report on the Server side
+    
+    def RequestReport(self, path):
         try:
-            execInfo    = self.ExecutionClient.service.LoadReport(path, None)
+            execInfo = self.ExecutionClient.service.LoadReport(path, None)
+            return execInfo
         except BaseException as e:
-            msg = "Could not execute the Report: %s" % e.fault.faultstring
+            msg = "Could not Load the Report: %s" % e.fault.faultstring
             log.error(msg)
             
             if self.verbose:     
-                print(msg) 
+                print(msg)
+            
+            return
+    
+    def RenderReport(self, LoadedReport, format, **parameters):
+        '''
+        Render an already executed Report
+        '''
+        
+        # check if format is valid
+        available_formats = ['XML','NULL','CSV','IMAGE','PDF','HTML4.0','HTML3.2','MHTML','EXCEL','Word']
+        if format not in available_formats:
+            msg = "Format is not valid: %s" % format
+            log.error(msg)
+            
+            if self.verbose:     
+                print(msg)
             
             return
         
@@ -208,7 +211,7 @@ class SSRS():
             ''' % (k, v)
         
         param_xml = schemas.xml_Execute_Report_Parameter  
-        param_xml = param_xml.format(execInfo.ExecutionID, params)
+        param_xml = param_xml.format(LoadedReport.ExecutionID, params)
         
         try:
             setparam = self.ExecutionClient.service.SetExecutionParameters(__inject={'msg': param_xml})
@@ -222,7 +225,7 @@ class SSRS():
             return
         
         # Default XML Schema | SUDS Factory doesent worked very well in this case
-        xml = schemas.xml_Render_Report.format(execInfo.ExecutionID, format)
+        xml = schemas.xml_Render_Report.format(LoadedReport.ExecutionID, format)
         
         # Render the report by its ExecutionID
         try:
