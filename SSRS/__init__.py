@@ -2,32 +2,48 @@
 
 from suds.client import Client
 from suds.sax.text import Text
+from suds.sax.element import Element
 from suds.transport.http import HttpAuthenticated
+from  . import schemas
+import base64
 import logging as log
+import codecs
+import uuid
 import sys
+import os
 
 class SSRS():
     '''
     Create a SOAP connection to a SSRS (Microsoft Reporting Services)
 
     Example of usage on SSRS 2008:
-        RS = SSRS(host='http://localhost/ReportinServices/ReportService2010.asmx?wsdl', user:'user@domain.com', key_password='myfreakingpassword')
+        RS = SSRS(ReportService   = 'http://localhost/ReportinServices/ReportService2010.asmx?wsdl', 
+                  ReportExecution = 'http://myserver/reportserver/ReportExecution2005.asmx?wsdl',
+                  user            = 'user@domain.com', 
+                  key_password    = 'myfreakingpassword'
+                )
 
     '''
 
-    def __init__(self, host='http://localhost/reportserver/ReportService2010.asmx?wsdl', user='SEPTODONT\admin', key_password='admin', verbose=True):
+    def __init__(self, ReportService, ReportExecution, user, key_password, verbose=True):
         
-        self.verbose = verbose 
-        credentials  = dict(username=user, password=key_password)          
-        credentials  = HttpAuthenticated(**credentials)
+        self.verbose = verbose
+        
+        service_cred    = dict(username=user, password=key_password)          
+        service_cred    = HttpAuthenticated(**service_cred)
+        
+        exec_cred       = dict(username=user, password=key_password)
+        exec_cred       = HttpAuthenticated(**exec_cred)
+        
         log.basicConfig(filename='SSRS.log', level=log.INFO)
         
         try:
-            self.client = Client(host, transport=credentials)
+            self.ServiceClient      = Client(ReportService, transport=service_cred)
+            self.ExecutionClient    = Client(ReportExecution, transport=exec_cred)
         
         except BaseException as e:        
            
-            msg = "Could not connect to %s with user %s: %s" % (host, user, str(e))
+            msg = "Error during connection: %s" % e.fault.faultstring
             log.error(msg)          
         
             if self.verbose:            
@@ -41,12 +57,12 @@ class SSRS():
         Return the list of methods available for your SSRS version
         '''
         try:
-            list_of_methods = [method for method in self.client.wsdl.services[0].ports[0].methods]
+            list_of_methods = [method for method in self.ServiceClient.wsdl.services[0].ports[0].methods]
             return list_of_methods
 
         except BaseException as e:
 
-            msg = "ListMethod() Could not retrieve the methods: %s" % (str(e))            
+            msg = "ListMethod() Could not retrieve the methods: %s" % e.fault.faultstring      
             log.error(msg)            
             
             if self.verbose:                
@@ -62,11 +78,11 @@ class SSRS():
         '''
 
         try:
-            it = self.client.service.ListChildren(dir, recursive)
+            it = self.ServiceClient.service.ListChildren(dir, recursive)
             it = it.CatalogItem
 
         except BaseException as e:
-            msg = "ListDirItems() Could not retrieve the Objects: %s" % (str(e))    
+            msg = "ListDirItems() Could not retrieve the Objects: %s" % e.fault.faultstring
             log.error(msg)
             
             if self.verbose:     
@@ -103,7 +119,7 @@ class SSRS():
                 
         
         except BaseException as e:
-            msg = "Find() Could not retrieve the Objects: %s" % (str(e))    
+            msg = "Find() Could not retrieve the Objects: %s" % e.fault.faultstring
             log.error(msg)
             
             if self.verbose:     
@@ -131,12 +147,12 @@ class SSRS():
         '''
         
         try:
-            it = self.client.service.GetItemParameters(path, None, True, None, None)
+            it = self.ServiceClient.service.GetItemParameters(path, None, True, None, None)
             if isinstance(it, Text):
                 return dict(it)
             
         except BaseException as e:
-            msg = "GetParameters() Could not retrieve the parameters: %s" % str(e)    
+            msg = "GetParameters() Could not retrieve the parameters: %s" % e.fault.faultstring
             log.error(msg)
             
             if self.verbose:     
@@ -159,8 +175,78 @@ class SSRS():
             }
         
         return param_dict
-
+    
+    def RequestReport(self, path, format, **parameters):
+        '''
+            Retrieve the report from SSRS
+                Render and create output file
+        '''
         
+        # Available formats of render
+        available_formats = {'XML':'xml','NULL':'txt','CSV':'csv','IMAGE':'jpg','PDF':'pdf','HTML4.0':'html','HTML3.2':'html','MHTML':'mht','EXCEL':'xlsx','Word':'docx'}
+        
+        # ExecInfo generates the Report on the Server side
+        try:
+            execInfo    = self.ExecutionClient.service.LoadReport(path, None)
+        except BaseException as e:
+            msg = "Could not execute the Report: %s" % e.fault.faultstring
+            log.error(msg)
+            
+            if self.verbose:     
+                print(msg) 
+            
+            return
+        
+        # Set parameters
+        params = ''
+        for k, v in parameters['parameters'].items():
+            params =  params +'''
+            <rep:ParameterValue>
+               <rep:Name>%s</rep:Name>
+               <rep:Value>%s</rep:Value>
+            </rep:ParameterValue>
+            ''' % (k, v)
+        
+        param_xml = schemas.xml_Execute_Report_Parameter  
+        param_xml = param_xml.format(execInfo.ExecutionID, params)
+        
+        try:
+            setparam = self.ExecutionClient.service.SetExecutionParameters(__inject={'msg': param_xml})
+        except BaseException as e:
+            msg = "Could not Send Parameters: %s" % e.fault.faultstring
+            log.error(msg)
+            
+            if self.verbose:     
+                print(msg) 
+            
+            return
+        
+        # Default XML Schema | SUDS Factory doesent worked very well in this case
+        xml = schemas.xml_Render_Report.format(execInfo.ExecutionID, format)
+        
+        # Render the report by its ExecutionID
+        try:
+            result = self.ExecutionClient.service.Render(__inject={'msg': xml})
+        
+        except BaseException as e:
+            msg = "Could not Render the Report: %s" % e.fault.faultstring
+            log.error(msg)
+            
+            if self.verbose:     
+                print(msg) 
+            
+            return
+        
+        # Data to be sended
+        Data= {}
+        for k, v in result:
+            if k == 'Result':
+                 Data['Result'] = base64.b64decode(result.Result)
+            
+            else:
+                Data[k] = v
+        
+        return Data
         
         
         
