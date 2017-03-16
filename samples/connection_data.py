@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 
-_host   ='http://myserver/report/ReportService2010.asmx?wsdl'
-
-_user   ='user@domain.com'
-
-_psw    ='@password2017'
+_service    = 'http://srvtdv2/report/ReportService2010.asmx?wsdl'
+_execution  = 'http://srvtdv2/report/ReportExecution2005.asmx?wsdl'
+_user       = 'frreinert@septodont.intra.fr'
+_psw        = 'fabrei9496'
 
